@@ -208,7 +208,7 @@ class DevBot:
                 return False
             genai.configure(api_key=api_key)
             self.clients["google"] = {
-              "client": genai.GenerativeModel('gemini-2.5-flash'),
+                "client": genai.GenerativeModel('gemini-2.5-flash'),
                 "model": "gemini-2.5-flash",
                 "type": "google"
             }
