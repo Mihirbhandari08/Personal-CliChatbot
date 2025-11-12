@@ -547,6 +547,1161 @@ Format code blocks with proper syntax highlighting using markdown.{file_context_
         if self.multi_model_mode:
             providers = self.config.get("consensus_providers", [])
             console.print(f"[info]Using providers: {', '.join([p.upper() for p in providers])}[/info]")
+        # ==================== DAILY BRIEFING FEATURES ====================
+    
+    def fetch_hacker_news(self, count=8):
+        """Fetch top stories from Hacker News"""
+        try:
+            response = requests.get("https://hacker-news.firebaseio.com/v0/topstories.json", timeout=5)
+            story_ids = response.json()[:count]
+            
+            stories = []
+            for story_id in story_ids:
+                story_response = requests.get(f"https://hacker-news.firebaseio.com/v0/item/{story_id}.json", timeout=3)
+                story = story_response.json()
+                if story and story.get('title'):
+                    stories.append({
+                        'title': story['title'],
+                        'url': story.get('url', f"https://news.ycombinator.com/item?id={story_id}"),
+                        'score': story.get('score', 0),
+                        'comments': story.get('descendants', 0)
+                    })
+            return stories
+        except Exception as e:
+            return None
+    
+    def fetch_devto_articles(self, count=8):
+        """Fetch latest articles from Dev.to"""
+        try:
+            response = requests.get(f"https://dev.to/api/articles?per_page={count}&top=7", timeout=5)
+            articles = response.json()
+            
+            return [{
+                'title': article['title'],
+                'author': article['user']['name'],
+                'url': article['url'],
+                'reactions': article.get('public_reactions_count', 0),
+                'comments': article.get('comments_count', 0)
+            } for article in articles]
+        except Exception as e:
+            return None
+    
+    def fetch_github_trending(self, count=8):
+        """Fetch GitHub trending repositories"""
+        try:
+            response = requests.get(
+                "https://api.gitterapp.com/repositories",
+                params={"since": "daily", "language": ""},
+                timeout=5
+            )
+            repos = response.json()[:count]
+            
+            return [{
+                'name': repo['name'],
+                'owner': repo['owner'],
+                'description': repo.get('description', 'No description'),
+                'stars': repo.get('stars', 0),
+                'language': repo.get('language', 'Unknown')
+            } for repo in repos]
+        except Exception as e:
+            return None
+    
+    def fetch_reddit_programming(self, count=5):
+        """Fetch top posts from r/programming"""
+        try:
+            headers = {'User-Agent': 'DevBot/1.0'}
+            response = requests.get(
+                f"https://www.reddit.com/r/programming/hot.json?limit={count}",
+                headers=headers,
+                timeout=5
+            )
+            data = response.json()
+            
+            posts = []
+            for post in data['data']['children']:
+                post_data = post['data']
+                posts.append({
+                    'title': post_data['title'],
+                    'url': post_data['url'],
+                    'author': post_data['author'],
+                    'score': post_data['score'],
+                    'comments': post_data['num_comments'],
+                    'subreddit': post_data['subreddit']
+                })
+            return posts
+        except Exception as e:
+            return None
+    
+    def fetch_reddit_til(self, count=3):
+        """Fetch Today I Learned from Reddit"""
+        try:
+            headers = {'User-Agent': 'DevBot/1.0'}
+            response = requests.get(
+                f"https://www.reddit.com/r/todayilearned/hot.json?limit={count}",
+                headers=headers,
+                timeout=5
+            )
+            data = response.json()
+            
+            tils = []
+            for post in data['data']['children']:
+                post_data = post['data']
+                title = post_data['title']
+                if title.startswith('TIL '):
+                    title = title[4:]
+                elif title.startswith('TIL: '):
+                    title = title[5:]
+                
+                tils.append({
+                    'title': title,
+                    'url': f"https://reddit.com{post_data['permalink']}",
+                    'score': post_data['score']
+                })
+            return tils
+        except Exception as e:
+            return None
+    
+    def fetch_product_hunt(self, count=5):
+        """Fetch top products from Product Hunt"""
+        try:
+            response = requests.get(
+                "https://www.producthunt.com/frontend/graphql",
+                headers={
+                    'User-Agent': 'DevBot/1.0',
+                    'Content-Type': 'application/json'
+                },
+                json={
+                    "query": """
+                    query {
+                        posts(first: 5, order: VOTES) {
+                            edges {
+                                node {
+                                    name
+                                    tagline
+                                    votesCount
+                                    commentsCount
+                                    url
+                                }
+                            }
+                        }
+                    }
+                    """
+                },
+                timeout=5
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                products = []
+                for edge in data.get('data', {}).get('posts', {}).get('edges', [])[:count]:
+                    node = edge['node']
+                    products.append({
+                        'name': node['name'],
+                        'tagline': node['tagline'],
+                        'votes': node['votesCount'],
+                        'comments': node['commentsCount'],
+                        'url': node['url']
+                    })
+                return products if products else None
+            return None
+        except Exception as e:
+            return None
+    
+    def fetch_crypto_prices(self, count=5):
+        """Fetch top cryptocurrency prices"""
+        try:
+            response = requests.get(
+                "https://api.coingecko.com/api/v3/coins/markets",
+                params={
+                    'vs_currency': 'usd',
+                    'order': 'market_cap_desc',
+                    'per_page': count,
+                    'page': 1,
+                    'sparkline': False
+                },
+                timeout=5
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                cryptos = []
+                for coin in data:
+                    change_24h = coin.get('price_change_percentage_24h', 0)
+                    cryptos.append({
+                        'name': coin['name'],
+                        'symbol': coin['symbol'].upper(),
+                        'price': coin['current_price'],
+                        'change_24h': change_24h,
+                        'market_cap': coin['market_cap']
+                    })
+                return cryptos
+            return None
+        except Exception as e:
+            return None
+    
+    def fetch_stock_indices(self):
+        """Fetch major stock market indices"""
+        try:
+            symbols = {
+                '^GSPC': 'S&P 500',
+                '^DJI': 'Dow Jones',
+                '^IXIC': 'NASDAQ',
+                '^FTSE': 'FTSE 100'
+            }
+            
+            indices = []
+            for symbol, name in symbols.items():
+                try:
+                    response = requests.get(
+                        f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
+                        params={'interval': '1d', 'range': '1d'},
+                        timeout=3
+                    )
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        result = data['chart']['result'][0]
+                        meta = result['meta']
+                        
+                        current_price = meta['regularMarketPrice']
+                        prev_close = meta['previousClose']
+                        change = current_price - prev_close
+                        change_percent = (change / prev_close) * 100
+                        
+                        indices.append({
+                            'name': name,
+                            'symbol': symbol,
+                            'price': current_price,
+                            'change': change,
+                            'change_percent': change_percent
+                        })
+                except:
+                    continue
+            
+            return indices if indices else None
+        except Exception as e:
+            return None
+    
+    def get_quote_of_day(self):
+        """Get an inspirational quote"""
+        try:
+            response = requests.get("https://zenquotes.io/api/today", timeout=5)
+            data = response.json()
+            if data and len(data) > 0:
+                return {
+                    'text': data[0]['q'],
+                    'author': data[0]['a']
+                }
+        except:
+            pass
+        
+        import random
+        quotes = [
+            {"text": "The only way to do great work is to love what you do.", "author": "Steve Jobs"},
+            {"text": "Code is like humor. When you have to explain it, it's bad.", "author": "Cory House"},
+            {"text": "First, solve the problem. Then, write the code.", "author": "John Johnson"},
+            {"text": "Talk is cheap. Show me the code.", "author": "Linus Torvalds"},
+        ]
+        return random.choice(quotes)
+    
+    def fetch_blogs(self, topic, count=10):
+        """Fetch top blogs about a topic from multiple sources"""
+        all_results = []
+
+        if requests is None:
+            console.print("[error]Please install requests: pip install requests[/error]")
+            return all_results
+
+        # Source 1: Dev.to search
+        try:
+            response = requests.get(
+                "https://dev.to/api/articles",
+                params={'tag': topic.lower().replace(' ', ''), 'per_page': count},
+                timeout=5
+            )
+            if response.status_code == 200:
+                articles = response.json()
+                for article in articles[:count]:
+                    all_results.append({
+                        'title': article.get('title', 'No title'),
+                        'url': article.get('url'),
+                        'author': article.get('user', {}).get('name', 'Unknown'),
+                        'published': article.get('published_at'),
+                        'reading_time': article.get('reading_time_minutes', 'N/A'),
+                        'tags': article.get('tag_list', []),
+                        'reactions': article.get('public_reactions_count', 0),
+                        'source': 'Dev.to'
+                    })
+        except Exception as e:
+            console.print(f"[dim red]Dev.to search error: {e}[/dim red]")
+
+        # Source 2: Medium via simple search placeholder (no official free API)
+        try:
+            # Placeholder: construct a search query for potential integration with a search API
+            search_query = f"{topic} site:medium.com"
+            # Real implementation could call a search API or scrape results (respect robots.txt and ToS)
+            # For now, we skip adding Medium results to avoid fragile scraping code.
+        except Exception:
+            pass
+
+        # Source 3: Hashnode GraphQL API
+        try:
+            # Hashnode requires a proper GraphQL query via POST
+            graphql_query = {
+                "query": f'''
+                {{
+                  posts(page: 0, perPage: {count}, feedType: LATEST) {{
+                    title
+                    brief
+                    slug
+                    dateAdded
+                    author {{
+                      name
+                    }}
+                    readingTime
+                  }}
+                }}
+                '''
+            }
+            resp = requests.post("https://api.hashnode.com/", json=graphql_query, timeout=5)
+            if resp.status_code == 200:
+                data = resp.json()
+                # Try to parse posts if present
+                posts = data.get('data', {}).get('posts') or []
+                for p in posts[:count]:
+                    all_results.append({
+                        'title': p.get('title', 'No title'),
+                        'url': p.get('slug') and f"https://hashnode.com/post/{p.get('slug')}" or None,
+                        'author': p.get('author', {}).get('name', 'Unknown'),
+                        'published': p.get('dateAdded'),
+                        'reading_time': p.get('readingTime', 'N/A'),
+                        'tags': [],
+                        'reactions': 0,
+                        'source': 'Hashnode'
+                    })
+        except Exception:
+            pass
+
+        return all_results
+
+    def show_blogs(self, topic, count=10):
+        """Display top blogs about a topic"""
+        if requests is None:
+            console.print("[error]Please install requests: pip install requests[/error]")
+            return
+        
+        console.print(f"\n[bold cyan]🔍 Searching for blogs about: {topic}[/bold cyan]\n")
+        
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+            transient=True
+        ) as progress:
+            progress.add_task(f"📚 Searching for '{topic}' blogs...", total=None)
+            blogs = self.fetch_blogs(topic, count)
+        
+        if not blogs:
+            console.print(f"[warning]No blogs found for '{topic}'. Try a different topic![/warning]")
+            return
+        
+        console.print(Panel.fit(
+            f"[bold green]📚 Top {len(blogs)} Blogs about '{topic}'[/bold green]",
+            border_style="green"
+        ))
+        
+        for i, blog in enumerate(blogs, 1):
+            # Format date
+            try:
+                from datetime import datetime
+                date_obj = datetime.fromisoformat(blog['published'].replace('Z', '+00:00'))
+                formatted_date = date_obj.strftime("%B %d, %Y")
+            except:
+                formatted_date = "Recent"
+            
+            console.print(f"\n[bold cyan]{i}. {blog['title']}[/bold cyan]")
+            console.print(f"   [dim]by {blog['author']} • {formatted_date}[/dim]")
+            if blog['reading_time'] != 'N/A':
+                console.print(f"   [dim yellow]⏱️  {blog['reading_time']} min read[/dim yellow]")
+            console.print(f"   [blue]🔗 {blog['url']}[/blue]")
+            if blog.get('reactions', 0) > 0:
+                console.print(f"   [dim green]❤️  {blog['reactions']} reactions[/dim green]")
+            if blog.get('tags'):
+                tags = ', '.join(blog['tags'][:5])
+                console.print(f"   [dim]🏷️  {tags}[/dim]")
+        
+        console.print(f"\n[dim]💡 Use '/blog {topic} --save' to save results to file[/dim]")
+
+    def save_blogs(self, topic, count=10):
+        """Save blog search results to markdown file"""
+        from datetime import datetime
+
+        blogs = self.fetch_blogs(topic, count)
+
+        if not blogs:
+            console.print("[warning]No blogs found to save.[/warning]")
+            return
+
+        filename = f"devbot-blogs-{topic.replace(' ', '-')}.md"
+
+        try:
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(f"# 📚 Top Blogs about '{topic}'\n\n")
+                f.write(f"*Generated by DevBot on {datetime.now().strftime('%Y-%m-%d')}*\n\n")
+                f.write("---\n\n")
+            
+                for i, blog in enumerate(blogs, 1):
+                    f.write(f"## {i}. {blog['title']}\n\n")
+                    f.write(f"**Author:** {blog['author']}\n\n")
+                    f.write(f"**Published:** {blog['published']}\n\n")
+                    if blog['reading_time'] != 'N/A':
+                        f.write(f"**Reading Time:** {blog['reading_time']} minutes\n\n")
+                    f.write(f"**Source:** {blog['source']}\n\n")
+                    if blog.get('tags'):
+                        f.write(f"**Tags:** {', '.join(blog['tags'])}\n\n")
+                f.write(f"**Link:** [{blog['url']}]({blog['url']})\n\n")
+                f.write("---\n\n")
+
+            console.print(f"[success]✅ Blog list saved to: {filename}[/success]")
+        except Exception as e:
+            console.print(f"[error]❌ Failed to save: {e}[/error]")
+    
+    def search_stackoverflow(self, query, count=10):
+        """Search StackOverflow for questions and answers"""
+        if requests is None:
+            console.print("[error]Please install requests: pip install requests[/error]")
+            return []
+        
+        try:
+            response = requests.get(
+                "https://api.stackexchange.com/2.3/search/advanced",
+                params={
+                    'order': 'desc',
+                    'sort': 'relevance',
+                    'q': query,
+                    'site': 'stackoverflow',
+                    'pagesize': count,
+                    'filter': 'withbody'
+                },
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                results = []
+                for item in data.get('items', []):
+                    results.append({
+                        'title': item.get('title', 'No title'),
+                        'url': item.get('link'),
+                        'score': item.get('score', 0),
+                        'answer_count': item.get('answer_count', 0),
+                        'is_answered': item.get('is_answered', False),
+                        'view_count': item.get('view_count', 0),
+                        'tags': item.get('tags', []),
+                        'owner': item.get('owner', {}).get('display_name', 'Unknown'),
+                        'creation_date': item.get('creation_date', 0)
+                    })
+                return results
+            return []
+        except Exception as e:
+            console.print(f"[dim red]StackOverflow search error: {e}[/dim red]")
+            return []
+
+    def show_stackoverflow(self, query, count=10):
+        """Display StackOverflow search results"""
+        if requests is None:
+            console.print("[error]Please install requests: pip install requests[/error]")
+            return
+        
+        console.print(f"\n[bold cyan]🔍 Searching StackOverflow for: {query}[/bold cyan]\n")
+        
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+            transient=True
+        ) as progress:
+            progress.add_task(f"📚 Searching StackOverflow...", total=None)
+            results = self.search_stackoverflow(query, count)
+        
+        if not results:
+            console.print(f"[warning]No results found for '{query}'. Try different keywords![/warning]")
+            return
+        
+        console.print(Panel.fit(
+            f"[bold green]📚 Top {len(results)} StackOverflow Results for '{query}'[/bold green]",
+            border_style="green"
+        ))
+        
+        for i, result in enumerate(results, 1):
+            # Format date
+            try:
+                from datetime import datetime
+                date_obj = datetime.fromtimestamp(result['creation_date'])
+                formatted_date = date_obj.strftime("%B %d, %Y")
+            except:
+                formatted_date = "Unknown date"
+            
+            answered_icon = "✅" if result['is_answered'] else "❓"
+            console.print(f"\n[bold cyan]{i}. {answered_icon} {result['title']}[/bold cyan]")
+            console.print(f"   [dim]by {result['owner']} • {formatted_date}[/dim]")
+            console.print(f"   [blue]🔗 {result['url']}[/blue]")
+            console.print(f"   [dim green]⬆️  {result['score']} score • 💬 {result['answer_count']} answers • 👁️  {result['view_count']} views[/dim green]")
+            if result.get('tags'):
+                tags = ', '.join(result['tags'][:5])
+                console.print(f"   [dim]🏷️  {tags}[/dim]")
+        
+        console.print(f"\n[dim]💡 Use '/so {query} --save' to save results to file[/dim]")
+
+    def save_stackoverflow(self, query, count=10):
+        """Save StackOverflow search results to markdown file"""
+        from datetime import datetime
+        
+        results = self.search_stackoverflow(query, count)
+        
+        if not results:
+            console.print("[warning]No results found to save.[/warning]")
+            return
+        
+        filename = f"devbot-stackoverflow-{query.replace(' ', '-')}.md"
+        
+        try:
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(f"# 📚 StackOverflow Results for '{query}'\n\n")
+                f.write(f"*Generated by DevBot on {datetime.now().strftime('%Y-%m-%d')}*\n\n")
+                f.write("---\n\n")
+                
+                for i, result in enumerate(results, 1):
+                    answered_status = "✅ Answered" if result['is_answered'] else "❓ No accepted answer"
+                    f.write(f"## {i}. {result['title']}\n\n")
+                    f.write(f"**Status:** {answered_status}\n\n")
+                    f.write(f"**Asked by:** {result['owner']}\n\n")
+                    try:
+                        date_obj = datetime.fromtimestamp(result['creation_date'])
+                        f.write(f"**Date:** {date_obj.strftime('%B %d, %Y')}\n\n")
+                    except:
+                        pass
+                    f.write(f"**Score:** {result['score']} | **Answers:** {result['answer_count']} | **Views:** {result['view_count']}\n\n")
+                    if result.get('tags'):
+                        f.write(f"**Tags:** {', '.join(result['tags'])}\n\n")
+                    f.write(f"**Link:** [{result['url']}]({result['url']})\n\n")
+                    f.write("---\n\n")
+            
+            console.print(f"[success]✅ StackOverflow results saved to: {filename}[/success]")
+        except Exception as e:
+            console.print(f"[error]❌ Failed to save: {e}[/error]")
+
+    def search_documentation(self, query, count=10):
+        """Search documentation sites (DevDocs)"""
+        if requests is None:
+            console.print("[error]Please install requests: pip install requests[/error]")
+            return []
+        
+        try:
+            # Search multiple documentation sources
+            results = []
+            
+            # DevDocs API search
+            response = requests.get(
+                f"https://devdocs.io/search",
+                params={'q': query},
+                timeout=10
+            )
+            
+            # Alternative: Search ReadTheDocs
+            rtd_response = requests.get(
+                "https://readthedocs.org/api/v3/search/",
+                params={'q': query, 'page_size': count},
+                timeout=10
+            )
+            
+            if rtd_response.status_code == 200:
+                data = rtd_response.json()
+                for item in data.get('results', [])[:count]:
+                    results.append({
+                        'title': item.get('title', 'No title'),
+                        'url': item.get('link', '#'),
+                        'description': item.get('description', 'No description'),
+                        'project': item.get('project', {}).get('name', 'Unknown'),
+                        'version': item.get('version', {}).get('slug', 'latest'),
+                        'source': 'ReadTheDocs'
+                    })
+            
+            return results
+        except Exception as e:
+            console.print(f"[dim red]Documentation search error: {e}[/dim red]")
+            return []
+
+    def show_documentation(self, query, count=10):
+        """Display documentation search results"""
+        if requests is None:
+            console.print("[error]Please install requests: pip install requests[/error]")
+            return
+        
+        console.print(f"\n[bold cyan]🔍 Searching Documentation for: {query}[/bold cyan]\n")
+        
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+            transient=True
+        ) as progress:
+            progress.add_task(f"📖 Searching documentation...", total=None)
+            results = self.search_documentation(query, count)
+        
+        if not results:
+            console.print(f"[warning]No documentation found for '{query}'. Try different keywords![/warning]")
+            return
+        
+        console.print(Panel.fit(
+            f"[bold green]📖 Top {len(results)} Documentation Results for '{query}'[/bold green]",
+            border_style="green"
+        ))
+        
+        for i, result in enumerate(results, 1):
+            console.print(f"\n[bold cyan]{i}. {result['title']}[/bold cyan]")
+            console.print(f"   [dim]{result['description'][:100]}...[/dim]")
+            console.print(f"   [dim yellow]📦 {result['project']} • v{result['version']}[/dim yellow]")
+            console.print(f"   [blue]🔗 {result['url']}[/blue]")
+        
+        console.print(f"\n[dim]💡 Use '/docs {query} --save' to save results to file[/dim]")
+
+    def search_research_papers(self, query, count=10):
+        """Search research papers using arXiv API"""
+        if requests is None:
+            console.print("[error]Please install requests: pip install requests[/error]")
+            return []
+        
+        try:
+            import xml.etree.ElementTree as ET
+            
+            response = requests.get(
+                "http://export.arxiv.org/api/query",
+                params={
+                    'search_query': f'all:{query}',
+                    'start': 0,
+                    'max_results': count,
+                    'sortBy': 'relevance',
+                    'sortOrder': 'descending'
+                },
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                root = ET.fromstring(response.content)
+                ns = {'atom': 'http://www.w3.org/2005/Atom'}
+                
+                results = []
+                for entry in root.findall('atom:entry', ns):
+                    title = entry.find('atom:title', ns)
+                    summary = entry.find('atom:summary', ns)
+                    published = entry.find('atom:published', ns)
+                    link = entry.find('atom:id', ns)
+                    
+                    # Get authors
+                    authors = []
+                    for author in entry.findall('atom:author', ns):
+                        name = author.find('atom:name', ns)
+                        if name is not None:
+                            authors.append(name.text)
+                    
+                    # Get categories
+                    categories = []
+                    for category in entry.findall('atom:category', ns):
+                        term = category.get('term')
+                        if term:
+                            categories.append(term)
+                    
+                    results.append({
+                        'title': title.text.strip() if title is not None else 'No title',
+                        'summary': summary.text.strip() if summary is not None else 'No summary',
+                        'published': published.text if published is not None else 'Unknown',
+                        'url': link.text if link is not None else '#',
+                        'authors': authors,
+                        'categories': categories,
+                        'source': 'arXiv'
+                    })
+                
+                return results
+            return []
+        except Exception as e:
+            console.print(f"[dim red]Research paper search error: {e}[/dim red]")
+            return []
+
+    def show_research_papers(self, query, count=10):
+        """Display research paper search results"""
+        if requests is None:
+            console.print("[error]Please install requests: pip install requests[/error]")
+            return
+        
+        console.print(f"\n[bold cyan]🔍 Searching Research Papers for: {query}[/bold cyan]\n")
+        
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+            transient=True
+        ) as progress:
+            progress.add_task(f"📄 Searching arXiv...", total=None)
+            results = self.search_research_papers(query, count)
+        
+        if not results:
+            console.print(f"[warning]No research papers found for '{query}'. Try different keywords![/warning]")
+            return
+        
+        console.print(Panel.fit(
+            f"[bold green]📄 Top {len(results)} Research Papers for '{query}'[/bold green]",
+            border_style="green"
+        ))
+        
+        for i, result in enumerate(results, 1):
+            # Format date
+            try:
+                from datetime import datetime
+                date_obj = datetime.fromisoformat(result['published'].replace('Z', '+00:00'))
+                formatted_date = date_obj.strftime("%B %d, %Y")
+            except:
+                formatted_date = "Unknown date"
+            
+            console.print(f"\n[bold cyan]{i}. {result['title']}[/bold cyan]")
+            
+            # Show authors (limit to 3)
+            if result['authors']:
+                authors_str = ', '.join(result['authors'][:3])
+                if len(result['authors']) > 3:
+                    authors_str += f" et al. ({len(result['authors'])} authors)"
+                console.print(f"   [dim]by {authors_str} • {formatted_date}[/dim]")
+            
+            # Show summary (first 150 chars)
+            summary = result['summary'][:150].replace('\n', ' ') + "..."
+            console.print(f"   [dim]{summary}[/dim]")
+            
+            console.print(f"   [blue]🔗 {result['url']}[/blue]")
+            
+            if result.get('categories'):
+                cats = ', '.join(result['categories'][:3])
+                console.print(f"   [dim]🏷️  {cats}[/dim]")
+        
+        console.print(f"\n[dim]💡 Use '/paper {query} --save' to save results to file[/dim]")
+
+    def save_research_papers(self, query, count=10):
+        """Save research paper search results to markdown file"""
+        from datetime import datetime
+        
+        results = self.search_research_papers(query, count)
+        
+        if not results:
+            console.print("[warning]No research papers found to save.[/warning]")
+            return
+        
+        filename = f"devbot-papers-{query.replace(' ', '-')}.md"
+        
+        try:
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(f"# 📄 Research Papers for '{query}'\n\n")
+                f.write(f"*Generated by DevBot on {datetime.now().strftime('%Y-%m-%d')}*\n\n")
+                f.write("---\n\n")
+                
+                for i, result in enumerate(results, 1):
+                    f.write(f"## {i}. {result['title']}\n\n")
+                    
+                    if result['authors']:
+                        f.write(f"**Authors:** {', '.join(result['authors'])}\n\n")
+                    
+                    try:
+                        date_obj = datetime.fromisoformat(result['published'].replace('Z', '+00:00'))
+                        f.write(f"**Published:** {date_obj.strftime('%B %d, %Y')}\n\n")
+                    except:
+                        pass
+                    
+                    f.write(f"**Abstract:**\n{result['summary']}\n\n")
+                    
+                    if result.get('categories'):
+                        f.write(f"**Categories:** {', '.join(result['categories'])}\n\n")
+                    
+                    f.write(f"**Link:** [{result['url']}]({result['url']})\n\n")
+                    f.write("---\n\n")
+            
+            console.print(f"[success]✅ Research papers saved to: {filename}[/success]")
+        except Exception as e:
+            console.print(f"[error]❌ Failed to save: {e}[/error]")
+
+
+
+    def show_daily_briefing(self, count=8):
+        """Show comprehensive daily briefing"""
+        if requests is None:
+            console.print("[error]Please install requests: pip install requests[/error]")
+            return
+        
+        today = datetime.now().strftime("%Y-%m-%d")
+        day_name = datetime.now().strftime("%A")
+        
+        # Show header
+        console.print()
+        console.print(Panel.fit(
+            f"[bold cyan]📰 DevBot Daily Briefing[/bold cyan]\n"
+            f"[dim]{day_name}, {today}[/dim]",
+            border_style="cyan",
+            box=box.DOUBLE
+        ))
+        
+        # Fetch all data with progress indicator
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+            transient=True
+        ) as progress:
+            progress.add_task("📡 Fetching latest updates from all sources...", total=None)
+            
+            hn_stories = self.fetch_hacker_news(count)
+            devto_articles = self.fetch_devto_articles(count)
+            github_repos = self.fetch_github_trending(count)
+            reddit_posts = self.fetch_reddit_programming(5)
+            reddit_til = self.fetch_reddit_til(3)
+            product_hunt = self.fetch_product_hunt(5)
+            crypto_prices = self.fetch_crypto_prices(5)
+            stock_indices = self.fetch_stock_indices()
+            quote = self.get_quote_of_day()
+        
+        console.print()
+
+        
+        # ============ MARKET OVERVIEW ============
+        console.print(Panel.fit(
+            "[bold green]💰 Market Overview[/bold green]",
+            border_style="green"
+        ))
+        
+        # Stock Indices
+        if stock_indices:
+            console.print("\n  [bold]📈 Stock Indices[/bold]")
+            for idx in stock_indices:
+                change_color = "green" if idx['change'] >= 0 else "red"
+                arrow = "▲" if idx['change'] >= 0 else "▼"
+                console.print(
+                    f"    [cyan]{idx['name']}:[/cyan] "
+                    f"${idx['price']:,.2f} "
+                    f"[{change_color}]{arrow} {idx['change']:+.2f} ({idx['change_percent']:+.2f}%)[/{change_color}]"
+                )
+        
+        # Crypto Prices
+        if crypto_prices:
+            console.print("\n  [bold]₿ Top Cryptocurrencies[/bold]")
+            for crypto in crypto_prices:
+                change_color = "green" if crypto['change_24h'] >= 0 else "red"
+                arrow = "▲" if crypto['change_24h'] >= 0 else "▼"
+                price_str = f"${crypto['price']:,.2f}" if crypto['price'] >= 1 else f"${crypto['price']:.6f}"
+                console.print(
+                    f"    [cyan]{crypto['name']} ({crypto['symbol']}):[/cyan] "
+                    f"{price_str} "
+                    f"[{change_color}]{arrow} {crypto['change_24h']:+.2f}%[/{change_color}]"
+                )
+        
+        console.print()
+        
+        # ============ HACKER NEWS ============
+        console.print(Panel.fit(
+            "[bold yellow]🔥 Hacker News — Top Stories[/bold yellow]",
+            border_style="yellow"
+        ))
+        
+        if hn_stories:
+            for i, story in enumerate(hn_stories, 1):
+                title = story['title']
+                if len(title) > 90:
+                    title = title[:87] + "..."
+                score_emoji = "🔥" if story['score'] > 500 else "⭐" if story['score'] > 200 else "•"
+                console.print(f"  {score_emoji} [cyan]{i}.[/cyan] {title}")
+                console.print(f"     [dim]{story['score']} points • {story['comments']} comments[/dim]")
+        else:
+            console.print("  [dim]Could not fetch Hacker News stories.[/dim]")
+        
+        console.print()
+        
+        # ============ DEV.TO ============
+        console.print(Panel.fit(
+            "[bold magenta]📝 Dev.to — Latest Articles[/bold magenta]",
+            border_style="magenta"
+        ))
+        
+        if devto_articles:
+            for i, article in enumerate(devto_articles, 1):
+                title = article['title']
+                if len(title) > 80:
+                    title = title[:77] + "..."
+                console.print(f"  [cyan]{i}.[/cyan] {title}")
+                console.print(f"     [dim]by {article['author']} • {article['reactions']} reactions • {article['comments']} comments[/dim]")
+        else:
+            console.print("  [dim]Could not fetch Dev.to articles.[/dim]")
+        
+        console.print()
+        
+        # ============ GITHUB TRENDING ============
+        console.print(Panel.fit(
+            "[bold green]🔭 GitHub Trending (Today)[/bold green]",
+            border_style="green"
+        ))
+        
+        if github_repos:
+            for i, repo in enumerate(github_repos, 1):
+                name = f"{repo['owner']}/{repo['name']}"
+                desc = repo['description']
+                if len(desc) > 80:
+                    desc = desc[:77] + "..."
+                stars_emoji = "🌟" if repo['stars'] > 1000 else "⭐"
+                console.print(f"  {stars_emoji} [cyan]{i}.[/cyan] [bold]{name}[/bold] [{repo['language']}]")
+                console.print(f"     [dim]{desc}[/dim]")
+                console.print(f"     [dim yellow]⭐ {repo['stars']} stars today[/dim yellow]")
+        else:
+            console.print("  [dim]Could not fetch GitHub trending repos.[/dim]")
+        
+        console.print()
+        
+        # ============ REDDIT r/programming ============
+        console.print(Panel.fit(
+            "[bold red]🤖 Reddit — r/programming[/bold red]",
+            border_style="red"
+        ))
+        
+        if reddit_posts:
+            for i, post in enumerate(reddit_posts, 1):
+                title = post['title']
+                if len(title) > 85:
+                    title = title[:82] + "..."
+                console.print(f"  [cyan]{i}.[/cyan] {title}")
+                console.print(f"     [dim]↑ {post['score']} • 💬 {post['comments']} comments • u/{post['author']}[/dim]")
+        else:
+            console.print("  [dim]Could not fetch Reddit posts.[/dim]")
+        
+        console.print()
+        
+        # ============ PRODUCT HUNT ============
+        console.print(Panel.fit(
+            "[bold yellow]🚀 Product Hunt — Today's Top Products[/bold yellow]",
+            border_style="yellow"
+        ))
+        
+        if product_hunt:
+            for i, product in enumerate(product_hunt, 1):
+                tagline = product['tagline']
+                if len(tagline) > 70:
+                    tagline = tagline[:67] + "..."
+                console.print(f"  [cyan]{i}.[/cyan] [bold]{product['name']}[/bold]")
+                console.print(f"     [dim]{tagline}[/dim]")
+                console.print(f"     [dim yellow]▲ {product['votes']} upvotes • 💬 {product['comments']} comments[/dim yellow]")
+        else:
+            console.print("  [dim]Could not fetch Product Hunt data.[/dim]")
+        
+        console.print()
+        
+        # ============ TODAY I LEARNED ============
+        console.print(Panel.fit(
+            "[bold blue]🧠 Today I Learned (TIL)[/bold blue]",
+            border_style="blue"
+        ))
+        
+        if reddit_til:
+            for i, til in enumerate(reddit_til, 1):
+                title = til['title']
+                if len(title) > 90:
+                    title = title[:87] + "..."
+                console.print(f"  [cyan]{i}.[/cyan] {title}")
+                console.print(f"     [dim]↑ {til['score']} points[/dim]")
+        else:
+            console.print("  [dim]Could not fetch TIL posts.[/dim]")
+        
+        console.print()
+        
+        # ============ QUOTE OF THE DAY ============
+        console.print(Panel.fit(
+            "[bold yellow]💡 Quote of the Day[/bold yellow]",
+            border_style="yellow"
+        ))
+        
+        if quote:
+            quote_text = f"  [italic]❝ {quote['text']} ❞[/italic]\n  [dim]— {quote['author']}[/dim]"
+            console.print(quote_text)
+        
+        console.print()
+        
+        # ============ DEV TIP ============
+        console.print(Panel.fit(
+            "[bold cyan]🎯 Dev Tip of the Day[/bold cyan]",
+            border_style="cyan"
+        ))
+        
+        tips = [
+            "Use 'git commit --amend' to modify your last commit message without creating a new commit",
+            "Press Ctrl+R in terminal for reverse search through command history - super time saver!",
+            "Use 'python -m json.tool' to pretty-print JSON from command line: cat file.json | python -m json.tool",
+            "Docker tip: Use '.dockerignore' to exclude files and speed up your Docker builds significantly",
+            "VS Code: Press Ctrl+P to quickly open files by name - no more tree navigation!",
+            "Use 'curl -I <url>' to see HTTP headers without downloading the entire content",
+            "Git: Use 'git stash pop' to apply and remove the last stash in one command",
+            "Python's http.server is great for quick file sharing: python -m http.server 8000",
+            "Use 'git log --oneline --graph --all' for a beautiful visualization of your git history",
+            "SSH tip: Use 'ssh-copy-id user@host' to easily copy your SSH key to a remote server",
+            "Use 'tldr <command>' for quick, practical examples of command usage (install: npm install -g tldr)",
+            "VS Code: Alt+Up/Down moves lines up/down, Shift+Alt+Up/Down duplicates lines",
+            "Use 'git bisect' to binary search through commits and find which one introduced a bug",
+            "Docker: Use 'docker system prune -a' to clean up unused images, containers, and networks",
+            "Python debugger: Add 'import pdb; pdb.set_trace()' to set breakpoints in your code",
+            "Use 'npx' to run Node.js packages without installing them globally",
+            "Git: 'git commit --fixup <commit-hash>' creates a fixup commit for easier rebasing",
+            "Use 'watch <command>' to run a command repeatedly and see live updates",
+            "PostgreSQL: Use 'EXPLAIN ANALYZE' before your query to see execution plan and performance",
+            "Use 'jq' for parsing and manipulating JSON in the terminal: curl api.com | jq '.data'",
+            "Bash: Use '!!' to repeat the last command, '! for the last argument",
+            "Use 'ncdu' (NCurses Disk Usage) for interactive disk space analysis",
+            "Git: Create aliases for common commands: git config --global alias.co checkout",
+            "Use 'htop' instead of 'top' for a much better process monitoring experience",
+            "VS Code: Ctrl+Shift+L selects all occurrences of current selection for multi-cursor editing"
+        ]
+        import random
+        tip = random.choice(tips)
+        console.print(f"  [italic cyan]💡 {tip}[/italic cyan]")
+        
+        console.print()
+        
+        # ============ FOOTER ============
+        footer_text = (
+            f"[dim]{'─' * 100}[/dim]\n"
+            f"[dim]💡 Commands:[/dim]\n"
+            f"  • [cyan]devbot daily --count N[/cyan] - Change items per section\n"
+            f"  • [cyan]devbot daily --save[/cyan] - Save briefing to markdown\n"
+            f"  • [cyan]/daily[/cyan] - Run from interactive mode\n\n"
+            f"[dim]Add to your ~/.bashrc or ~/.zshrc to see daily briefing on terminal startup:[/dim]\n"
+            f"  [cyan]devbot daily[/cyan]"
+        )
+        console.print(Panel(footer_text, border_style="dim cyan", box=box.ROUNDED))
+    
+    def save_daily_briefing(self, count=8):
+        """Save daily briefing to a markdown file"""
+        today = datetime.now().strftime("%Y-%m-%d")
+        filename = f"devbot-daily-{today}.md"
+        
+        try:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console,
+                transient=True
+            ) as progress:
+                progress.add_task("📡 Fetching and saving briefing...", total=None)
+                
+                hn_stories = self.fetch_hacker_news(count)
+                devto_articles = self.fetch_devto_articles(count)
+                github_repos = self.fetch_github_trending(count)
+                reddit_posts = self.fetch_reddit_programming(5)
+                reddit_til = self.fetch_reddit_til(3)
+                product_hunt = self.fetch_product_hunt(5)
+                crypto_prices = self.fetch_crypto_prices(5)
+                stock_indices = self.fetch_stock_indices()
+                quote = self.get_quote_of_day()
+            
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(f"# 📰 DevBot Daily Briefing\n")
+                f.write(f"**{datetime.now().strftime('%A, %B %d, %Y')}**\n\n")
+                f.write("---\n\n")
+                
+                # Market Overview
+                f.write("## 💰 Market Overview\n\n")
+                
+                if stock_indices:
+                    f.write("### 📈 Stock Indices\n\n")
+                    for idx in stock_indices:
+                        arrow = "▲" if idx['change'] >= 0 else "▼"
+                        f.write(f"- **{idx['name']}**: ${idx['price']:,.2f} {arrow} {idx['change']:+.2f} ({idx['change_percent']:+.2f}%)\n")
+                    f.write("\n")
+                
+                if crypto_prices:
+                    f.write("### ₿ Top Cryptocurrencies\n\n")
+                    for crypto in crypto_prices:
+                        arrow = "▲" if crypto['change_24h'] >= 0 else "▼"
+                        price_str = f"${crypto['price']:,.2f}" if crypto['price'] >= 1 else f"${crypto['price']:.6f}"
+                        f.write(f"- **{crypto['name']} ({crypto['symbol']})**: {price_str} {arrow} {crypto['change_24h']:+.2f}%\n")
+                    f.write("\n")
+                
+                # Hacker News
+                f.write("## 🔥 Hacker News - Top Stories\n\n")
+                if hn_stories:
+                    for i, story in enumerate(hn_stories, 1):
+                        f.write(f"{i}. [{story['title']}]({story['url']})\n")
+                        f.write(f"   - {story['score']} points • {story['comments']} comments\n\n")
+                else:
+                    f.write("*Could not fetch stories*\n\n")
+                
+                # Dev.to
+                f.write("## 📝 Dev.to - Latest Articles\n\n")
+                if devto_articles:
+                    for i, article in enumerate(devto_articles, 1):
+                        f.write(f"{i}. [{article['title']}]({article['url']})\n")
+                        f.write(f"   - by {article['author']} • {article['reactions']} reactions • {article['comments']} comments\n\n")
+                else:
+                    f.write("*Could not fetch articles*\n\n")
+                
+                # GitHub
+                f.write("## 🔭 GitHub Trending (Today)\n\n")
+                if github_repos:
+                    for i, repo in enumerate(github_repos, 1):
+                        name = f"{repo['owner']}/{repo['name']}"
+                        f.write(f"{i}. **{name}** [{repo['language']}]\n")
+                        f.write(f"   - {repo['description']}\n")
+                        f.write(f"   - ⭐ {repo['stars']} stars today\n\n")
+                else:
+                    f.write("*Could not fetch repos*\n\n")
+                
+                # Reddit r/programming
+                f.write("## 🤖 Reddit - r/programming\n\n")
+                if reddit_posts:
+                    for i, post in enumerate(reddit_posts, 1):
+                        f.write(f"{i}. {post['title']}\n")
+                        f.write(f"   - ↑ {post['score']} • 💬 {post['comments']} comments • u/{post['author']}\n")
+                        f.write(f"   - [View on Reddit]({post['url']})\n\n")
+                else:
+                    f.write("*Could not fetch posts*\n\n")
+                
+                # Product Hunt
+                f.write("## 🚀 Product Hunt - Today's Top Products\n\n")
+                if product_hunt:
+                    for i, product in enumerate(product_hunt, 1):
+                        f.write(f"{i}. **{product['name']}**\n")
+                        f.write(f"   - {product['tagline']}\n")
+                        f.write(f"   - ▲ {product['votes']} upvotes • 💬 {product['comments']} comments\n\n")
+                else:
+                    f.write("*Could not fetch products*\n\n")
+                
+                # TIL
+                f.write("## 🧠 Today I Learned (TIL)\n\n")
+                if reddit_til:
+                    for i, til in enumerate(reddit_til, 1):
+                        f.write(f"{i}. {til['title']}\n")
+                        f.write(f"   - ↑ {til['score']} points • [Read more]({til['url']})\n\n")
+                else:
+                    f.write("*Could not fetch TIL posts*\n\n")
+                
+                # Quote
+                f.write("## 💡 Quote of the Day\n\n")
+                if quote:
+                    f.write(f"> *{quote['text']}*\n")
+                    f.write(f">\n> — {quote['author']}\n\n")
+                
+                f.write(f"\n---\n\n")
+                f.write(f"*Generated by DevBot on {today}*\n")
+                f.write(f"\n**Commands:**\n")
+                f.write(f"- `devbot daily` - View daily briefing\n")
+                f.write(f"- `devbot daily --count N` - Customize item count\n")
+                f.write(f"- `devbot daily --save` - Save to markdown\n")
+            
+            console.print(f"[success]✅ Daily briefing saved to: {filename}[/success]")
+            
+        except Exception as e:
+            console.print(f"[error]❌ Failed to save briefing: {e}[/error]")
+
+ #-------------------------------stackoverflow------------------------
+    
     
     def interactive_mode(self):
         """Start interactive chat mode"""
@@ -569,6 +1724,10 @@ Format code blocks with proper syntax highlighting using markdown.{file_context_
             "  [bold]/api[/bold]            - API testing mode\n"
             "  [bold]/file[/bold]           - File operations mode\n"
             "  [bold]/learn[/bold]          - Learning mode\n"
+            "  [bold]/so[/bold]             - for searching in stackoverflow\n"
+            "  [bold]/research[/bold]       - for finding research papers mode\n"
+            "  [bold]/blog[/bold] <topic>    - Search top blogs about any topic\n"
+             " [bold]/daily[/bold]          - Daily briefing (news, trends, tips)\n"
             "  [bold]/help[/bold]           - Show this help message",
             title="🚀 Welcome to DevBot",
             border_style="cyan",
@@ -644,7 +1803,74 @@ Format code blocks with proper syntax highlighting using markdown.{file_context_
                 elif question == "/learn":
                     self.learning_mode()
                     continue
-                    
+                elif question.startswith("/blog "):
+                    parts = question.split(maxsplit=1)
+                    if len(parts)<2:
+                        console.print("[error] Usage : /blog <topic> [--save][/error]")
+                        continue
+                    args=parts[1].split()
+                    topic = ' '.join([arg for arg in args if not arg.startswith('--')])
+                    if '--save' in args:
+                        self.save_blogs(topic)
+                    else:
+                        self.show_blogs(topic)
+                    continue
+                elif question == "/daily":
+                    self.show_daily_briefing()
+                    continue                    
+                elif question.startswith("/daily"):
+                    args = question.split()
+                    if "--count" in args:
+                        try:
+                            idx = args.index("--count")
+                            count = int(args[idx + 1])
+                            self.show_daily_briefing(count)
+                        except (IndexError, ValueError):
+                            console.print("[error]Usage: /daily --count <number>[/error]")
+                    elif "--save" in args:
+                        self.save_daily_briefing()
+                    else:
+                        self.show_daily_briefing()
+                    continue
+                elif question.startswith("/so "):
+                    parts = question.split(maxsplit=1)
+                    if len(parts) < 2:
+                        console.print("[error]Usage: /so <query> [--save][/error]")
+                        continue
+                    args = parts[1].split()
+                    query = ' '.join([arg for arg in args if not arg.startswith('--')])
+                    if '--save' in args:
+                        self.save_stackoverflow(query)
+                    else:
+                        self.show_stackoverflow(query)
+                    continue
+                
+                elif question.startswith("/docs "):
+                    parts = question.split(maxsplit=1)
+                    if len(parts) < 2:
+                        console.print("[error]Usage: /docs <query> [--save][/error]")
+                        continue
+                    args = parts[1].split()
+                    query = ' '.join([arg for arg in args if not arg.startswith('--')])
+                    if '--save' in args:
+                        # Implement save_documentation if needed
+                        console.print("[info]Save feature coming soon for docs[/info]")
+                    else:
+                        self.show_documentation(query)
+                    continue
+                
+                elif question.startswith("/paper "):
+                    parts = question.split(maxsplit=1)
+                    if len(parts) < 2:
+                        console.print("[error]Usage: /paper <query> [--save][/error]")
+                        continue
+                    args = parts[1].split()
+                    query = ' '.join([arg for arg in args if not arg.startswith('--')])
+                    if '--save' in args:
+                        self.save_research_papers(query)
+                    else:
+                        self.show_research_papers(query)
+                    continue
                 elif question == "/help":
                     self.show_help()
                     continue
@@ -1950,10 +3176,20 @@ Total Activities: {topics_completed + quizzes_taken}
 [bold]/snippet[/bold] <name> - Save last answer as a snippet
 [bold]/snippets[/bold]       - List all saved snippets
 [bold]/stats[/bold]          - View usage statistics
+"[bold]/so[/bold] <query>       - Search StackOverflow\n"
+"[bold]/docs[/bold] <query>     - Search documentation\n"
+"[bold]/paper[/bold] <query>    - Search research papers (arXiv)\n"
 [bold]/mode[/bold]           - Toggle multi-model consensus mode
 [bold]/provider[/bold]       - Show current provider info
 [bold]/api[/bold]            - Enter API testing mode
+[bold]/blog[/bold] <topic>       - Search top blogs about any topic
+  --save         - Save results to markdown file
 [bold]/help[/bold]           - Show this help message
+[bold]/daily[/bold]          - Show daily briefing (news, trends, markets)
+  --count N      - Show N items per section
+  --save         - Save briefing to markdown file
+[bold]/help[/bold]           - Show this help message
+
 
 [bold cyan]API Testing Commands:[/bold cyan]
 get <url>                    - GET request
@@ -2045,7 +3281,12 @@ Examples:
     config_parser.add_argument('--multi-model', action='store_true', help='Enable multi-model consensus mode')
     config_parser.add_argument('--single-model', action='store_true', help='Disable multi-model mode')
     config_parser.add_argument('--show', action='store_true', help='Show current configuration')
-    
+
+       # Daily command
+    daily_parser = subparsers.add_parser('daily', help='Show daily briefing')
+    daily_parser.add_argument('--count', type=int, default=8, help='Number of items per section')
+    daily_parser.add_argument('--save', action='store_true', help='Save briefing to markdown file')
+
     # History command
     subparsers.add_parser('history', help='View conversation history')
     
@@ -2098,6 +3339,11 @@ Examples:
             console.print("[warning]Use --set-key, --provider, --multi-model, or --show[/warning]")
     elif args.command == 'history':
         bot.show_history(20)
+    elif args.command == 'daily':
+        if args.save:
+            bot.save_daily_briefing(args.count)
+        else:
+            bot.show_daily_briefing(args.count)
     else:
         # Default: interactive mode
         bot.interactive_mode()
